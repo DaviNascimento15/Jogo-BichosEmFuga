@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Animal Pop! 🐾 — Mini jogo</title>
+<style>
+  :root{
+    --bg:#0f1724;
+    --card:#0b1220;
+    --accent:#ffb86b;
+    --text:#e6eef8;
+    --glass: rgba(255,255,255,0.04);
+  }
+  *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#071021 0%, var(--bg) 100%);color:var(--text);}
+  .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px;}
+  .game {
+    width:980px; max-width:100%; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:18px; padding:22px; box-shadow: 0 10px 40px rgba(2,6,23,0.7); display:grid; grid-template-columns: 320px 1fr; gap:18px;
+    border:1px solid rgba(255,255,255,0.03);
+  }
+
+  /* painel lateral */
+  .panel {
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px; padding:18px; display:flex;flex-direction:column;gap:12px; align-items:stretch;
+  }
+  .title {font-weight:700;font-size:20px; letter-spacing:0.2px; display:flex;align-items:center;gap:10px;}
+  .title .logo {font-size:28px;}
+  .stat {background:var(--glass); padding:10px;border-radius:10px; display:flex;justify-content:space-between;align-items:center; font-weight:600;}
+  .controls {display:flex;gap:8px; margin-top:6px;}
+  .btn {
+    background:linear-gradient(90deg,#1b2330,#0f1724); border:1px solid rgba(255,255,255,0.04);
+    color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:700;
+  }
+  .btn.ghost{background:transparent;border:1px dashed rgba(255,255,255,0.06);}
+  .slider {width:100%;}
+
+  /* área de jogo */
+  .stage {
+    padding:14px; border-radius:12px; background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));
+    display:flex;flex-direction:column; gap:12px; align-items:stretch;
+  }
+  .top-row {display:flex;justify-content:space-between;align-items:center;}
+  .message {font-size:18px;font-weight:700;}
+  .grid {
+    margin-top:6px; background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));
+    border-radius:12px; padding:16px; display:grid; grid-template-columns: repeat(5, 1fr); gap:12px;
+    min-height:420px; align-content:start; position:relative; overflow:hidden;
+  }
+
+  /* buracos (slots) */
+  .slot {
+    background: rgba(0,0,0,0.18); border-radius:12px; aspect-ratio:1/1; display:flex;align-items:center;justify-content:center;
+    position:relative; transform:translateZ(0); overflow:visible;
+    transition: transform 180ms cubic-bezier(.2,.9,.3,1), box-shadow 180ms;
+    box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+  }
+  .slot.pop {transform: translateY(-8px); box-shadow: 0 14px 30px rgba(0,0,0,0.6);}
+
+  /* animal */
+  .animal {
+    font-size:44px; cursor:pointer; user-select:none; transform-origin:center bottom;
+    transition: transform 180ms cubic-bezier(.2,.9,.3,1);
+  }
+  .animal.hit {
+    transform: scale(0.6) rotate(-10deg);
+    filter: drop-shadow(0 6px 10px rgba(255,183,107,0.14));
+    opacity:0;
+  }
+
+  /* efeitos: pop, pulse */
+  @keyframes pulse {
+    0%{box-shadow: 0 0 0 0 rgba(255,184,107,0.5)}
+    70%{box-shadow: 0 0 0 18px rgba(255,184,107,0)}
+    100%{box-shadow:0 0 0 0 rgba(255,184,107,0)}
+  }
+  .pulse {animation:pulse 700ms ease-out;}
+
+  /* confete canvas */
+  #confetti {position:absolute; inset:0; pointer-events:none; z-index:30;}
+
+  /* HUD */
+  .hud {display:flex;gap:8px;align-items:center;}
+  .score {font-size:20px;font-weight:800;color:var(--accent);}
+  .timer {font-weight:700; font-size:16px; color:#9fb6d8;}
+  .footer {font-size:12px;color:#9fb6d8;opacity:0.9;margin-top:auto;text-align:center;}
+  .small {font-size:13px;color:#b9cfe8; opacity:0.9;}
+
+  /* responsivo */
+  @media (max-width:900px){
+    .game {grid-template-columns:1fr; width:100%;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="game" role="application" aria-label="Animal Pop Game">
+    <div class="panel" aria-hidden="false">
+      <div class="title"><span class="logo">🐾</span> Animal Pop!</div>
+      <div class="stat"><span>Pontuação</span><span class="score" id="score">0</span></div>
+      <div class="stat"><span>Tempo</span><span class="timer" id="time">30</span>s</div>
+      <div class="stat"><span>Nível</span><span id="level">1</span></div>
+
+      <div style="height:6px"></div>
+
+      <div class="small">Velocidade do jogo</div>
+      <input id="speed" class="slider" type="range" min="0.6" max="2.0" step="0.1" value="1.0">
+
+      <div class="controls">
+        <button id="startBtn" class="btn">▶️ Iniciar</button>
+        <button id="pauseBtn" class="btn ghost">⏸ Pausar</button>
+        <button id="resetBtn" class="btn ghost">🔁 Reiniciar</button>
+      </div>
+
+      <div style="height:8px"></div>
+
+      <div class="small">Animal alvo (vale + bonus)</div>
+      <div id="target" class="stat" style="justify-content:center;font-size:26px">🐶</div>
+
+      <div class="footer">Clique nos animais que aparecem! Atingir o alvo te dá pontos extras. Desenvolvido por você ❤️</div>
+    </div>
+
+    <div class="stage">
+      <div class="top-row">
+        <div class="message">Clique rápido! Animais aparecem aleatoriamente.</div>
+        <div class="hud">
+          <div class="small">Acertos: <span id="hits">0</span></div>
+        </div>
+      </div>
+
+      <div class="grid" id="grid" aria-live="polite">
+        <!-- 5x? slots serão inseridos via JS -->
+        <canvas id="confetti"></canvas>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+  Animal Pop! — mini jogo leve
+  - 25 slots (5x5)
+  - animais aparecem aleatoriamente
+  - clique para pontuar
+  - alvo aleatório que dá bônus
+  - temporizador + níveis (speed)
+  - efeitos: pop, animação click, confete simples via canvas, tom curto via WebAudio
+*/
+
+/* === CONFIG === */
+const ANIMALS = ["🐶","🐱","🐭","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🦄","🐔","🐴","🐧","🦉","🦋"];
+const SLOTS = 25;
+const BASE_TIME = 30; // segundos
+const POP_INTERVAL_BASE = 900; // ms base tempo entre pops
+/* ========== DOM ========== */
+const grid = document.getElementById('grid');
+const scoreEl = document.getElementById('score');
+const timeEl = document.getElementById('time');
+const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const resetBtn = document.getElementById('resetBtn');
+const targetEl = document.getElementById('target');
+const hitsEl = document.getElementById('hits');
+const levelEl = document.getElementById('level');
+const speedInput = document.getElementById('speed');
+const confettiCanvas = document.getElementById('confetti');
+confettiCanvas.width = confettiCanvas.clientWidth;
+confettiCanvas.height = confettiCanvas.clientHeight;
+const ctx = confettiCanvas.getContext('2d');
+
+/* ========== STATE ========== */
+let slots = []; // DOM nodes
+let animalsAt = new Map(); // slotIndex -> animalNode
+let score = 0;
+let hits = 0;
+let timeLeft = BASE_TIME;
+let timerInterval = null;
+let popInterval = null;
+let running = false;
+let level = 1;
+let target = ANIMALS[Math.floor(Math.random()*ANIMALS.length)];
+targetEl.textContent = target;
+
+/* ======== audio: tiny click tone via WebAudio ===== */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq=880, duration=0.06, type='sine'){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.value = 0.05;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start();
+  g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+  o.stop(audioCtx.currentTime + duration + 0.02);
+}
+
+/* ======== confetti simple ====== */
+let confettiPieces = [];
+function spawnConfetti(x,y,amount=12){
+  for(let i=0;i<amount;i++){
+    confettiPieces.push({
+      x,y,
+      vx:(Math.random()-0.5)*6,
+      vy:(Math.random()-1.5)*6 - 2,
+      size:6+Math.random()*8,
+      color: `hsl(${Math.floor(Math.random()*360)},70%,60%)`,
+      life: 60 + Math.floor(Math.random()*30)
+    });
+  }
+}
+function updateConfetti(){
+  const cw = confettiCanvas.width = confettiCanvas.clientWidth;
+  const ch = confettiCanvas.height = confettiCanvas.clientHeight;
+  ctx.clearRect(0,0,cw,ch);
+  for(let i=confettiPieces.length-1;i>=0;i--){
+    const p = confettiPieces[i];
+    p.vy += 0.18;
+    p.x += p.vx; p.y += p.vy; p.life--;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.ellipse(p.x,p.y,p.size*0.6,p.size*0.9, (p.x+p.y)%Math.PI,0,Math.PI*2);
+    ctx.fill();
+    if(p.life<=0 || p.y>ch+50) confettiPieces.splice(i,1);
+  }
+  requestAnimationFrame(updateConfetti);
+}
+requestAnimationFrame(updateConfetti);
+
+/* ======== build grid slots ======= */
+function buildGrid(){
+  grid.innerHTML = '';
+  // create slots
+  for(let i=0;i<SLOTS;i++){
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.dataset.index = i;
+    grid.appendChild(slot);
+    slots.push(slot);
+  }
+  // place canvas on top
+  grid.appendChild(confettiCanvas);
+}
+buildGrid();
+
+/* ======== core: spawn/clear animals ======= */
+function randomAnimal(){
+  return ANIMALS[Math.floor(Math.random()*ANIMALS.length)];
+}
+function pickEmptySlot(){
+  const empty = [];
+  for(let i=0;i<slots.length;i++){
+    if(!animalsAt.has(i)) empty.push(i);
+  }
+  if(empty.length===0) return null;
+  return empty[Math.floor(Math.random()*empty.length)];
+}
+
+function spawnAnimal(){
+  if(!running) return;
+  const idx = pickEmptySlot();
+  if(idx===null) return;
+  const slot = slots[idx];
+  slot.classList.add('pop');
+  const a = document.createElement('div');
+  a.className = 'animal';
+  a.textContent = randomAnimal();
+  a.dataset.slot = idx;
+  a.style.transform = 'translateY(12px) scale(1)';
+  slot.appendChild(a);
+  animalsAt.set(idx,a);
+
+  // entrada animada
+  requestAnimationFrame(()=> a.style.transform = 'translateY(0) scale(1.03)');
+
+  // auto-remove after some time
+  const life = Math.max(700, 1800 - (level*120));
+  a._timeout = setTimeout(()=> {
+    if(a && a.parentNode) {
+      a.parentNode.removeChild(a);
+      animalsAt.delete(idx);
+      slot.classList.remove('pop');
+    }
+  }, life);
+}
+
+/* clicking */
+function onAnimalClick(e){
+  const a = e.currentTarget;
+  if(!running) return;
+  if(a.classList.contains('hit')) return;
+  // visual
+  a.classList.add('hit');
+  const slotIdx = Number(a.dataset.slot);
+  const parentSlot = slots[slotIdx];
+  parentSlot.classList.remove('pop');
+  // score
+  let gained = 10;
+  if(a.textContent === target){
+    gained += 20; // bonus
+    spawnConfetti(parentSlot.offsetLeft + parentSlot.offsetWidth/2, parentSlot.offsetTop + parentSlot.offsetHeight/2, 18);
+    playTone(1200,0.09,'sine');
+  } else {
+    playTone(700,0.05,'triangle');
+  }
+  score += gained;
+  hits++;
+  scoreEl.textContent = String(score);
+  hitsEl.textContent = String(hits);
+
+  // pulse effect on slot
+  parentSlot.classList.add('pulse');
+  setTimeout(()=> parentSlot.classList.remove('pulse'),700);
+
+  // cleanup
+  clearTimeout(a._timeout);
+  setTimeout(()=> {
+    try{ if(a && a.parentNode) a.parentNode.removeChild(a); } catch(e){}
+    animalsAt.delete(slotIdx);
+  },250);
+}
+
+/* attach click handler delegation (we add listeners when spawn) */
+function attachAnimalHandlers(){
+  // whenever an animal arrives, set listener
+  animalsAt.forEach((node, idx) => {
+    if(!node._listened){
+      node.addEventListener('click', onAnimalClick);
+      node._listened = true;
+    }
+  });
+}
+
+/* spawn loop */
+function startSpawning(){
+  if(popInterval) clearInterval(popInterval);
+  const speed = Number(speedInput.value); // 0.6 .. 2.0
+  const interval = Math.max(180, POP_INTERVAL_BASE / (speed * (1 + level*0.12)));
+  popInterval = setInterval(()=>{
+    // spawn 1-2 animals randomly
+    const count = Math.random() < 0.2 ? 2 : 1;
+    for(let i=0;i<count;i++) spawnAnimal();
+    // attach listeners for any new animals
+    attachAnimalHandlers();
+  }, interval);
+}
+
+/* timer */
+function startTimer(){
+  if(timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(()=>{
+    timeLeft--;
+    timeEl.textContent = String(timeLeft);
+    if(timeLeft<=0) endGame();
+  },1000);
+}
+
+/* control functions */
+function startGame(){
+  if(running) return;
+  // resume audio context
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  running = true;
+  score = 0; hits = 0; timeLeft = BASE_TIME; level = 1;
+  scoreEl.textContent = '0'; hitsEl.textContent='0'; timeEl.textContent=String(timeLeft); levelEl.textContent=String(level);
+  target = ANIMALS[Math.floor(Math.random()*ANIMALS.length)];
+  targetEl.textContent = target;
+  // clear any existing animals
+  animalsAt.forEach((n, idx)=>{
+    try{ if(n && n.parentNode) n.parentNode.removeChild(n); }catch(e){}
+  });
+  animalsAt.clear();
+  // spawning and timer
+  startSpawning();
+  startTimer();
+  startBtn.textContent = '⏹ Parar';
+  startBtn.dataset.state = 'running';
+}
+
+/* pause toggles */
+function pauseGame(){
+  if(!running) return;
+  running = false;
+  if(timerInterval) clearInterval(timerInterval);
+  if(popInterval) clearInterval(popInterval);
+  startBtn.textContent = '▶️ Continuar';
+  startBtn.dataset.state = 'paused';
+}
+
+/* reset (stop and clear) */
+function resetGame(){
+  running = false;
+  if(timerInterval) clearInterval(timerInterval);
+  if(popInterval) clearInterval(popInterval);
+  // clear animals
+  animalsAt.forEach((n, idx)=>{
+    try{ if(n && n.parentNode) n.parentNode.removeChild(n); }catch(e){}
+  });
+  animalsAt.clear();
+  // reset state
+  score = 0; hits = 0; timeLeft = BASE_TIME; level = 1;
+  scoreEl.textContent='0'; hitsEl.textContent='0'; timeEl.textContent=String(timeLeft); levelEl.textContent='1';
+  startBtn.textContent = '▶️ Iniciar';
+  startBtn.dataset.state = '';
+}
+
+/* end game */
+function endGame(){
+  running = false;
+  if(timerInterval) clearInterval(timerInterval);
+  if(popInterval) clearInterval(popInterval);
+  level = Math.max(1, Math.floor(hits/10)+1);
+  levelEl.textContent = String(level);
+  // small celebration
+  spawnConfetti(confettiCanvas.clientWidth/2, confettiCanvas.clientHeight/4, 60);
+  playTone(400,0.18,'sawtooth');
+  setTimeout(()=> {
+    alert(`Fim de jogo!\nSua pontuação: ${score}\nAcertos: ${hits}\nNível alcançado: ${level}\n\nClique Iniciar para jogar novamente.`);
+  },250);
+  startBtn.textContent = '▶️ Iniciar';
+  startBtn.dataset.state = '';
+}
+
+/* level up logic: increase difficulty over time */
+function levelTick(){
+  if(!running) return;
+  // level is based on hits but also on elapsed time
+  level = Math.max(1, Math.floor(hits/7)+1);
+  levelEl.textContent = String(level);
+  // to make pace change, restart spawn interval
+  if(popInterval) startSpawning();
+}
+
+/* attach controls */
+startBtn.addEventListener('click', ()=>{
+  const state = startBtn.dataset.state;
+  if(state === 'running') { // stop -> pause
+    pauseGame();
+  } else if(state === 'paused') {
+    // resume
+    running = true;
+    startSpawning();
+    startTimer();
+    startBtn.textContent = '⏹ Parar';
+    startBtn.dataset.state = 'running';
+  } else {
+    startGame();
+  }
+});
+pauseBtn.addEventListener('click', ()=> {
+  if(running) pauseGame();
+  else {
+    if(startBtn.dataset.state === 'paused') {
+      // resume
+      running = true;
+      startSpawning();
+      startTimer();
+      startBtn.textContent = '⏹ Parar';
+      startBtn.dataset.state = 'running';
+    }
+  }
+});
+resetBtn.addEventListener('click', resetGame);
+
+/* speed control */
+speedInput.addEventListener('input', ()=> {
+  if(popInterval && running) startSpawning();
+});
+
+/* tick level every 2s */
+setInterval(levelTick, 2000);
+
+/* ensure animals get click listeners when created */
+const observer = new MutationObserver((mutations)=>{
+  for(const m of mutations){
+    for(const node of m.addedNodes){
+      if(node.nodeType===1 && node.classList && node.classList.contains('animal')){
+        node.addEventListener('click', onAnimalClick);
+      }
+    }
+  }
+});
+observer.observe(grid, {childList:true, subtree:true});
+
+/* accessibility: allow keyboard to click focused animals */
+document.addEventListener('keydown', (e)=>{
+  if(e.key === ' ' || e.key === 'Enter'){
+    const focused = document.activeElement;
+    if(focused && focused.classList && focused.classList.contains('animal')){
+      focused.click();
+      e.preventDefault();
+    }
+  }
+});
+
+/* responsive confetti canvas resize */
+window.addEventListener('resize', ()=> {
+  confettiCanvas.width = confettiCanvas.clientWidth;
+  confettiCanvas.height = confettiCanvas.clientHeight;
+});
+
+/* initial simple instruction animals so UI isn't empty */
+(function warmup(){
+  // after buildGrid called, slots[] filled; show a few animals
+  for(let i=0;i<6;i++){
+    setTimeout(spawnAnimal, 140*i);
+  }
+})();
+
+</script>
+</body>
+</html>
